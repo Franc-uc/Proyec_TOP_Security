@@ -1,4 +1,4 @@
-package com.example.proyec_top.data
+package com.example.proyec_top.repository
 
 import android.content.Context
 import androidx.room.Dao

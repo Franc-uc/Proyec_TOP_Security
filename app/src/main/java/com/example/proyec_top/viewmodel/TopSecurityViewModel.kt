@@ -4,9 +4,9 @@ import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.proyec_top.data.IncidenciaEntity
-import com.example.proyec_top.data.TopSecurityRepository
-import com.example.proyec_top.data.TrazabilidadEntity
+import com.example.proyec_top.repository.IncidenciaEntity
+import com.example.proyec_top.repository.TopSecurityRepository
+import com.example.proyec_top.repository.TrazabilidadEntity
 import com.example.proyec_top.model.EstadoIncidencia
 import com.example.proyec_top.model.IncidenciaSeguridad
 import com.example.proyec_top.model.NivelPrioridad
@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 

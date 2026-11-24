@@ -8,8 +8,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModelProvider
-import com.example.proyec_top.data.AppDatabase
-import com.example.proyec_top.data.TopSecurityRepository
+import com.example.proyec_top.repository.AppDatabase
+import com.example.proyec_top.repository.TopSecurityRepository
 import com.example.proyec_top.ui.MainAppScreen
 import com.example.proyec_top.viewmodel.TopSecurityViewModel
 import com.example.proyec_top.viewmodel.TopSecurityViewModelFactory
