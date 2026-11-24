@@ -92,6 +92,9 @@ interface IncidenciaDao {
 
     @Insert
     suspend fun insertarAccion(accion: TrazabilidadEntity)
+
+    @Query("DELETE FROM tabla_incidencias WHERE id = :id")
+    suspend fun eliminarPorId(id: String)
 }
 
 @Database(

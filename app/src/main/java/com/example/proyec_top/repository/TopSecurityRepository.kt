@@ -1,15 +1,22 @@
 package com.example.proyec_top.repository
 
 import androidx.room.withTransaction
+import com.example.proyec_top.network.ApiService
+import com.example.proyec_top.network.IncidenciaDto
+import com.example.proyec_top.network.RetrofitClient
+import com.example.proyec_top.network.SectorDto
 import kotlinx.coroutines.flow.Flow
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * Centraliza el acceso a Room. Las pantallas no ejecutan consultas SQL directamente.
+ * Centraliza el acceso a Room y sincroniza los datos con la API externa (MockAPI).
  */
-class TopSecurityRepository(private val database: AppDatabase) {
+class TopSecurityRepository(
+    private val database: AppDatabase,
+    private val api: ApiService = RetrofitClient.api
+) {
     private val usuarioDao = database.usuarioDao()
     private val incidenciaDao = database.incidenciaDao()
 
@@ -27,21 +34,125 @@ class TopSecurityRepository(private val database: AppDatabase) {
         usuarioDao.eliminarSesion()
     }
 
-    suspend fun obtenerIncidencia(id: String): IncidenciaEntity? = incidenciaDao.obtenerPorId(id)
+    // Endpoint 1 (GET /incidencias): descarga los casos desde MockAPI y los guarda en Room
+    suspend fun sincronizarIncidenciasDesdeApi() {
+        try {
+            val remotas = api.getIncidencias()
+            database.withTransaction {
+                remotas.forEach { dto ->
+                    val entidad = dto.toEntity()
+                    try {
+                        incidenciaDao.insertar(entidad)
+                    } catch (_: Exception) {
+                        incidenciaDao.actualizar(entidad)
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Fallback offline: Room mantiene los datos locales
+        }
+    }
 
+    // Endpoint 2 (GET /incidencias/{id}): consulta el detalle actualizado en la API y luego en Room
+    suspend fun obtenerIncidencia(id: String): IncidenciaEntity? {
+        try {
+            val idRemoto = resolverIdRemoto(id)
+            val dto = api.getIncidenciaPorId(idRemoto)
+            val entidad = dto.toEntity()
+            incidenciaDao.actualizar(entidad)
+        } catch (_: Exception) {
+            // Si falla la red, lee directamente desde Room
+        }
+        return incidenciaDao.obtenerPorId(id)
+    }
+
+    // Endpoint 3 (POST /incidencias): guarda en Room y envía el nuevo caso a MockAPI
     suspend fun registrarIncidencia(incidencia: IncidenciaEntity, primeraAccion: TrazabilidadEntity) {
         database.withTransaction {
             incidenciaDao.insertar(incidencia)
             incidenciaDao.insertarAccion(primeraAccion)
         }
+        try {
+            api.crearIncidencia(incidencia.toDto())
+        } catch (_: Exception) {
+        }
     }
 
+    // Endpoint 4 (PUT /incidencias/{id}): actualiza gestión en Room y en MockAPI
     suspend fun guardarGestion(incidencia: IncidenciaEntity, accion: TrazabilidadEntity) {
         database.withTransaction {
             incidenciaDao.actualizar(incidencia)
             incidenciaDao.insertarAccion(accion)
         }
+        try {
+            val idRemoto = resolverIdRemoto(incidencia.id)
+            api.actualizarIncidencia(idRemoto, incidencia.toDto(idRemoto))
+        } catch (_: Exception) {
+        }
     }
+
+    // Endpoint 5 (DELETE /incidencias/{id}): elimina el registro en MockAPI
+    suspend fun eliminarIncidenciaRemota(id: String): Boolean {
+        incidenciaDao.eliminarPorId(id)
+        return try {
+            val idRemoto = resolverIdRemoto(id)
+            val respuesta = api.eliminarIncidencia(idRemoto)
+            respuesta.isSuccessful
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    // Endpoint 6 (GET /sectores): obtiene los sectores disponibles desde MockAPI
+    suspend fun obtenerSectoresDesdeApi(): List<String> {
+        return try {
+            api.getSectores()
+                .map { it.nombre }
+                .filter { it.isNotBlank() }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    // Endpoint 7 (POST /sectores): registra un sector nuevo en MockAPI
+    suspend fun crearSectorEnApi(nombreSector: String): Boolean {
+        return try {
+            api.crearSector(SectorDto(nombre = nombreSector))
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Busca el ID autogenerado por MockAPI ("1", "2", etc.) a partir del código local ("SJ-..."). */
+    private suspend fun resolverIdRemoto(codigoLocal: String): String {
+        val listaRemota = api.getIncidencias()
+        return listaRemota.find { it.codigo == codigoLocal || it.id == codigoLocal }?.id ?: codigoLocal
+    }
+
+    private fun IncidenciaEntity.toDto(idRemoto: String? = null): IncidenciaDto = IncidenciaDto(
+        id = idRemoto,
+        codigo = id,
+        categoria = categoria,
+        sectorReferencial = sectorReferencial,
+        descripcion = descripcion,
+        fechaIngreso = fechaIngreso,
+        estado = estado,
+        prioridad = prioridad,
+        unidadAsignada = unidadAsignada
+    )
+
+    private fun IncidenciaDto.toEntity(): IncidenciaEntity = IncidenciaEntity(
+        id = codigo.ifBlank { id ?: "SJ-${System.currentTimeMillis()}" },
+        categoria = categoria,
+        sectorReferencial = sectorReferencial,
+        descripcion = descripcion,
+        fechaIngreso = fechaIngreso.ifBlank { formatearFecha() },
+        estado = estado,
+        prioridad = prioridad,
+        unidadAsignada = unidadAsignada,
+        creadoEn = System.currentTimeMillis()
+    )
 
     /** Carga dos casos totalmente sintéticos solo cuando la base de datos está vacía. */
     suspend fun insertarDatosDeDemostracionSiEsNecesario() {

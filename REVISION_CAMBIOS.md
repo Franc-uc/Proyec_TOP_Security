@@ -32,3 +32,25 @@
 ## Limitaciones técnicas conocidas
 
 La captura de cámara se usa como recurso nativo de demostración, pero la imagen no se persiste; los casos y sus acciones sí se guardan mediante Room. No se implementa servidor, GPS, notificaciones push ni autenticación segura.
+
+
+## [24/11/2026] Integración CRUD completo con MockAPI y sincronización en Room
+
+### Resumen
+Se implementó la conexión completa entre la aplicación y la API REST externa (MockAPI) mediante Retrofit, manteniendo la sincronización reactiva con la base de datos local SQLite/Room (`top_security_db`).
+
+### Cambios realizados
+
+* **Capa de Red y Endpoints (Retrofit)**
+    * **Incidencias:** Integración de las operaciones `GET /incidencias`, `GET /incidencias/{id}`, `POST /incidencias`, `PUT /incidencias/{id}` y `DELETE /incidencias/{id}`.
+    * **Sectores:** Integración de `GET /sectores` y `POST /sectores` para la gestión dinámica de ubicaciones referenciales.
+    * **Permisos (`AndroidManifest.xml`):** Habilitación de `android.permission.INTERNET` para las peticiones de red.
+
+* **Persistencia Local y Repositorio (`AppDatabase.kt`, `TopSecurityRepository.kt`)**
+    * Se agregó la consulta `eliminarPorId(id: String)` en `IncidenciaDao`, aprovechando `ForeignKey.CASCADE` para eliminar automáticamente su historial asociado en `tabla_trazabilidad`.
+    * Se actualizó `eliminarIncidenciaRemota` en `TopSecurityRepository` para ejecutar el borrado tanto en Room como en MockAPI.
+
+* **Interfaz de Usuario (`Pantallas.kt`)**
+    * **`FormularioRegistroScreen`:** Incorporación de selector desplegable conectado a los sectores de la API y botón para registrar nuevos sectores directamente en el servidor.
+    * **`DetalleIncidenciaScreen`:** Incorporación de botón y diálogo de confirmación para eliminar registros de forma sincronizada (servidor + local).
+    * **`MainAppScreen`:** Conexión de los flujos de estado (`sectores`), recarga individual al abrir el detalle (`refrescarIncidencia`) y acción de eliminación (`eliminarIncidencia`).

@@ -101,6 +101,7 @@ fun MainAppScreen(vm: TopSecurityViewModel) {
                 val rolActivo = usuarioActivo.rol
                 val incidencias by vm.incidencias.collectAsState()
                 val filtro by vm.filtroEstado.collectAsState()
+                val sectores by vm.sectores.collectAsState()
 
                 Scaffold(
                     containerColor = MaterialTheme.colorScheme.background,
@@ -182,7 +183,6 @@ fun MainAppScreen(vm: TopSecurityViewModel) {
                             targetState = pantallaActual,
                             transitionSpec = {
                                 if (targetState != "lista") {
-                                    // Al entrar al detalle de una incidencia o al formulario de reporte
                                     (slideInHorizontally(animationSpec = tween(280)) { ancho -> ancho / 4 } +
                                             fadeIn(animationSpec = tween(280)))
                                         .togetherWith(
@@ -190,7 +190,6 @@ fun MainAppScreen(vm: TopSecurityViewModel) {
                                                     fadeOut(animationSpec = tween(220))
                                         )
                                 } else {
-                                    // Al regresar a la lista principal
                                     (slideInHorizontally(animationSpec = tween(280)) { ancho -> -ancho / 4 } +
                                             fadeIn(animationSpec = tween(280)))
                                         .togetherWith(
@@ -208,11 +207,14 @@ fun MainAppScreen(vm: TopSecurityViewModel) {
                                     onFiltroSelected = { vm.aplicarFiltro(it) },
                                     onCasoClick = { id ->
                                         casoSeleccionadoId = id
+                                        vm.refrescarIncidencia(id)
                                         pantallaActual = "detalle"
                                     }
                                 )
 
                                 "registro" -> FormularioRegistroScreen(
+                                    sectoresDisponibles = sectores,
+                                    onAgregarSector = { vm.agregarSector(it) },
                                     onGuardar = { cat, sec, desc, foto ->
                                         vm.registrarIncidencia(cat, sec, desc, foto)
                                         pantallaActual = "lista"
@@ -235,6 +237,10 @@ fun MainAppScreen(vm: TopSecurityViewModel) {
                                                     rolActivo
                                                 )
                                                 pantallaActual = "lista"
+                                            },
+                                            onEliminar = {
+                                                vm.eliminarIncidencia(caso.id)
+                                                pantallaActual = "lista"
                                             }
                                         )
                                     }
@@ -243,7 +249,8 @@ fun MainAppScreen(vm: TopSecurityViewModel) {
                         }
                     }
                 }
-                //Advertencia de Salida al momento de cerrar sesión
+
+                // Advertencia de Salida al momento de cerrar sesión
                 if (mostrarModalSalir) {
                     AlertDialog(
                         onDismissRequest = { mostrarModalSalir = false },
@@ -285,7 +292,6 @@ fun MainAppScreen(vm: TopSecurityViewModel) {
         }
     }
 }
-
 // 1. LOGIN REDISEÑADO
 @Composable
 fun LoginScreen(onIngresar: (String, String) -> Unit) {
@@ -698,7 +704,11 @@ private fun ResumenStatCard(
 
 // 3. FORMULARIO CON CÁMARA NATIVA
 @Composable
-fun FormularioRegistroScreen(onGuardar: (String, String, String, Bitmap?) -> Unit) {
+fun FormularioRegistroScreen(
+    sectoresDisponibles: List<String> = emptyList(),
+    onAgregarSector: (String) -> Unit = {},
+    onGuardar: (String, String, String, Bitmap?) -> Unit
+) {
     val categorias = listOf(
         "Luminaria apagada",
         "Espacio público",
@@ -708,7 +718,9 @@ fun FormularioRegistroScreen(onGuardar: (String, String, String, Bitmap?) -> Uni
     )
     var categoria by remember { mutableStateOf(categorias.first()) }
     var mostrarCategorias by remember { mutableStateOf(false) }
+    var mostrarSectores by remember { mutableStateOf(false) }
     var sector by remember { mutableStateOf("") }
+    var avisoSector by remember { mutableStateOf<String?>(null) }
     var descripcion by remember { mutableStateOf("") }
     var fotoBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -764,15 +776,69 @@ fun FormularioRegistroScreen(onGuardar: (String, String, String, Bitmap?) -> Uni
                     }
                 }
 
+                // Selector conectado a Endpoint 6 (GET /sectores)
+                if (sectoresDisponibles.isNotEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { mostrarSectores = true },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "Elegir sector de API (${sectoresDisponibles.size} disponibles)",
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = mostrarSectores,
+                            onDismissRequest = { mostrarSectores = false }
+                        ) {
+                            sectoresDisponibles.forEach { opcionSector ->
+                                DropdownMenuItem(
+                                    text = { Text(opcionSector) },
+                                    onClick = {
+                                        sector = opcionSector
+                                        error = null
+                                        mostrarSectores = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = sector,
-                    onValueChange = { sector = it; error = null },
+                    onValueChange = { sector = it; error = null; avisoSector = null },
                     label = { Text("Sector ficticio / ubicación referencial") },
                     placeholder = { Text("Ej.: Sector simulado 03") },
                     supportingText = { Text("No ingreses domicilios reales ni datos sensibles.") },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // Botón conectado a Endpoint 7 (POST /sectores)
+                if (sector.trim().length >= 3 && !sectoresDisponibles.contains(sector.trim())) {
+                    OutlinedButton(
+                        onClick = {
+                            onAgregarSector(sector.trim())
+                            avisoSector = "Sector '${sector.trim()}' enviado a MockAPI."
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("+ Guardar sector en servidor")
+                    }
+                }
+
+                avisoSector?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.secondary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
 
                 OutlinedTextField(
                     value = descripcion,
@@ -847,9 +913,11 @@ fun FormularioRegistroScreen(onGuardar: (String, String, String, Bitmap?) -> Uni
 fun DetalleIncidenciaScreen(
     caso: IncidenciaSeguridad,
     rolActual: String,
-    onGestionar: (EstadoIncidencia, NivelPrioridad, String, String) -> Unit
+    onGestionar: (EstadoIncidencia, NivelPrioridad, String, String) -> Unit,
+    onEliminar: () -> Unit = {}
 ) {
     var mostrarModalCierre by remember { mutableStateOf(false) }
+    var mostrarModalEliminar by remember { mutableStateOf(false) }
     var estadoSel by remember { mutableStateOf(caso.estado) }
     var prioridadSel by remember { mutableStateOf(caso.prioridad) }
     var mostrarEstados by remember { mutableStateOf(false) }
@@ -1017,6 +1085,20 @@ fun DetalleIncidenciaScreen(
             }
         }
 
+        // Botón conectado a Endpoint 5 (DELETE /incidencias/{id})
+        OutlinedButton(
+            onClick = { mostrarModalEliminar = true },
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                "Eliminar registro (Servidor + Local)",
+                color = MaterialTheme.colorScheme.error,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
         if (mostrarModalCierre) {
             AlertDialog(
                 onDismissRequest = { mostrarModalCierre = false },
@@ -1042,9 +1124,33 @@ fun DetalleIncidenciaScreen(
                 }
             )
         }
+
+        if (mostrarModalEliminar) {
+            AlertDialog(
+                onDismissRequest = { mostrarModalEliminar = false },
+                title = { Text("Eliminar Incidencia") },
+                text = { Text("¿Desea eliminar este registro tanto de MockAPI como de la base de datos local?") },
+                confirmButton = {
+                    Button(
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        ),
+                        onClick = {
+                            mostrarModalEliminar = false
+                            onEliminar()
+                        }
+                    ) {
+                        Text("Eliminar")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { mostrarModalEliminar = false }) {
+                        Text("Cancelar")
+                    }
+                }
+            )
+        }
     }
-
-
 }
 
 // 5. PANTALLA DE CARGA INICIO DE SESIÓN

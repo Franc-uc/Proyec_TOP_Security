@@ -4,13 +4,13 @@ import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.proyec_top.repository.IncidenciaEntity
-import com.example.proyec_top.repository.TopSecurityRepository
-import com.example.proyec_top.repository.TrazabilidadEntity
 import com.example.proyec_top.model.EstadoIncidencia
 import com.example.proyec_top.model.IncidenciaSeguridad
 import com.example.proyec_top.model.NivelPrioridad
 import com.example.proyec_top.model.RegistroTrazabilidad
+import com.example.proyec_top.repository.IncidenciaEntity
+import com.example.proyec_top.repository.TopSecurityRepository
+import com.example.proyec_top.repository.TrazabilidadEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -70,9 +70,17 @@ class TopSecurityViewModel(private val repository: TopSecurityRepository) : View
     private val _filtroEstado = MutableStateFlow<EstadoIncidencia?>(null)
     val filtroEstado: StateFlow<EstadoIncidencia?> = _filtroEstado.asStateFlow()
 
+    // Estado para los sectores descargados desde MockAPI (Endpoint 6)
+    private val _sectores = MutableStateFlow<List<String>>(emptyList())
+    val sectores: StateFlow<List<String>> = _sectores.asStateFlow()
+
     init {
         viewModelScope.launch {
+            // Endpoint 1: descarga casos de MockAPI antes de evaluar si insertar datos demo
+            repository.sincronizarIncidenciasDesdeApi()
             repository.insertarDatosDeDemostracionSiEsNecesario()
+            // Endpoint 6: descarga el listado de sectores desde MockAPI
+            cargarSectores()
         }
     }
 
@@ -88,6 +96,22 @@ class TopSecurityViewModel(private val repository: TopSecurityRepository) : View
         _filtroEstado.value = estado
     }
 
+    // Endpoint 1 + 6: permite refrescar manualmente desde la barra superior o un botón
+    fun sincronizarConServidor() {
+        viewModelScope.launch {
+            repository.sincronizarIncidenciasDesdeApi()
+            cargarSectores()
+        }
+    }
+
+    // Endpoint 2: consulta una incidencia puntual por ID en la API
+    fun refrescarIncidencia(id: String) {
+        viewModelScope.launch {
+            repository.obtenerIncidencia(id)
+        }
+    }
+
+    // Endpoint 3: registra en Room y envía POST /incidencias
     fun registrarIncidencia(
         categoria: String,
         sector: String,
@@ -126,6 +150,7 @@ class TopSecurityViewModel(private val repository: TopSecurityRepository) : View
         }
     }
 
+    // Endpoint 2 + 4: consulta GET /incidencias/{id}, actualiza Room y envía PUT /incidencias/{id}
     fun gestionarIncidencia(
         id: String,
         nuevoEstado: EstadoIncidencia,
@@ -150,10 +175,37 @@ class TopSecurityViewModel(private val repository: TopSecurityRepository) : View
                 marcaTiempo = hora,
                 autorRol = autorRol,
                 detalleAccion = "Estado: ${nuevoEstado.display}. Prioridad: ${nuevaPrioridad.nivel}. " +
-                    "Responsable: $unidadFinal. Observación: $observacionFinal",
+                        "Responsable: $unidadFinal. Observación: $observacionFinal",
                 creadoEn = ahora
             )
             repository.guardarGestion(actualizado, accion)
+        }
+    }
+
+    // Endpoint 5: elimina una incidencia en MockAPI (DELETE /incidencias/{id})
+    fun eliminarIncidencia(id: String) {
+        viewModelScope.launch {
+            repository.eliminarIncidenciaRemota(id)
+        }
+    }
+
+    // Endpoint 6: obtiene sectores desde MockAPI (GET /sectores)
+    private suspend fun cargarSectores() {
+        val remotos = repository.obtenerSectoresDesdeApi()
+        if (remotos.isNotEmpty()) {
+            _sectores.value = remotos
+        }
+    }
+
+    // Endpoint 7: crea un sector nuevo en MockAPI (POST /sectores) y recarga la lista
+    fun agregarSector(nombre: String) {
+        val limpio = nombre.trim()
+        if (limpio.isBlank()) return
+        viewModelScope.launch {
+            val creado = repository.crearSectorEnApi(limpio)
+            if (creado) {
+                cargarSectores()
+            }
         }
     }
 }
